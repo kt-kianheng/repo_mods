@@ -1,0 +1,7 @@
+{
+	"name": "TargetDummy",
+	"version_number": "1.0.1",
+	"website_url": "",
+	"description": "Two training dummies by the shop's cosmetics gacha: a Robe that shows damage, knockback and impact numbers, and a 1000-HP ally droid for testing friendly fire and healing.",
+	"dependencies": ["BepInEx-BepInExPack-5.4.2305"]
+}

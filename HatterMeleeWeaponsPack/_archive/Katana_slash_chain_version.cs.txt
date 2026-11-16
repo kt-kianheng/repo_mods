@@ -1,0 +1,378 @@
+using System.Collections.Generic;
+using HarmonyLib;
+using Photon.Pun;
+using UnityEngine;
+
+namespace HatterMeleeWeaponsPack
+{
+    /// <summary>
+    /// The Katana's slash. Everything else (holding, turning, the scroll-out swing, the hurt box, durability) is the
+    /// vanilla sword's own code, untouched; only the hurt box's damage is changed to BladeDamage, for every hit.
+    ///
+    /// A slash is a quick sideways swing: the host watches which way the blade lies from the holder's eyes (its
+    /// compass bearing, so only side-to-side movement counts, not up and down or walking). A swing is movement in one
+    /// direction. It is a slash when its last SlashAngle degrees took no longer than SlashAngle / SlashSpeed seconds,
+    /// so a slow drag (getting ready to slash) never counts, while a quick flick after it does.
+    ///
+    /// The slash starts where the blade first moved at slash speed in that swing, and ends where the swing then
+    /// slows down, turns back, is let go, or after MaxSlashTime. When it is recognised the slash sound plays for
+    /// everyone; when it ends, a wave (<see cref="KatanaWave"/>) is released from halfway between its start and end,
+    /// flying outwards, tilted to the slash's line, and as wide as WaveSpanPerMetre times the slash's length.
+    ///
+    /// Waves come in chains: up to ChainLength slashes, either way, each between ChainWindowStart and ChainWindowEnd
+    /// seconds after the last wave, each release one. The chain's later waves start from exactly the same point as
+    /// its first (their slash's middle must be within ChainMaxDistance of the first slash's, or the wave is cancelled
+    /// and the chain ends). Only the first wave of a chain uses energy (WaveEnergy battery bars). When a chain ends, waves
+    /// rest for WaveCooldown seconds, counted from its last wave. Enemies a wave hits get a red X (see
+    /// <see cref="KatanaImpactMark"/>, sent to everyone from here). The scroll-out swing never counts.
+    /// </summary>
+    internal class Katana : MonoBehaviour
+    {
+        // set by KatanaBuilder on the prefab (serialized, so they survive the game cloning it)
+        public Vector3 bladeBase;          // item space
+        public Vector3 bladeTip;           // item space
+        public ItemMelee soundTemplate;
+
+        private const string SlashFile = "katana_slash.pcm";   // "Sword Slash and Swing" by David Dumais Audio (Pixabay, per the file name)
+        private const float MotionFloor = 40f;                  // degrees/s: slower than this for a while ends a swing
+        private const float StillGrace = 0.12f;                 // how long below MotionFloor before the swing ends
+        private const float SlashEndFraction = 0.35f;           // a slash has ended once its swing slows below this part of SlashSpeed
+        private const float MaxSlashTime = 0.8f;                // a slash ends after this long anyway
+        private const float MaxStepDegrees = 45f;               // a bigger jump in one physics step is a teleport, not a swing
+        private const float ScrollSwingIgnore = 0.6f;           // after a scroll swing starts, sideways movement isn't a slash
+
+        private PhysGrabObject physGrabObject;
+        private PhotonView photonView;
+        private HurtCollider hurt;
+        private Sound slashSound;
+        private ItemBattery battery;
+
+        // host: the swing being tracked. history = (time, degrees swept so far) for its last half second
+        private float lastBearing;
+        private bool haveBearing;
+        private Vector3 lastBladeMiddle;
+        private float sweep;
+        private int sweepDirection;         // +1 / -1, 0 = none
+        private float stillTime;
+        private Vector3 fastStart;          // the blade's middle where this swing first reached slash speed (world)
+        private bool haveFastStart;
+        private bool sweepIsSlash;          // recognised as a slash: a wave goes out when it ends
+        private float slashAt;
+        private float bestRate;             // fastest SlashAngle seen in this swing (degrees/s), for the log
+        private readonly List<Vector2> history = new List<Vector2>();
+        private PlayerAvatar sweepHolder;
+        private Transform sweepEyes;
+
+        // host: chains of slashes and the cooldown after them
+        private int chainCount;             // waves so far in the current chain (0 = none going)
+        private float chainUntil;           // the next slash must be made by then to continue the chain
+        private float lastWaveAt = -10f;
+        private Vector3 chainAnchor;        // the middle of the chain's first slash: later slashes must be near it
+        private Vector3 chainSpawn;         // where the chain's first wave started: the later ones start exactly there too
+        private float nextWave, nextCooldownLog;
+        internal float scrollSwingAt = -10f;
+
+        private void Start()
+        {
+            physGrabObject = GetComponent<PhysGrabObject>();
+            photonView = GetComponent<PhotonView>();
+            hurt = GetComponentInChildren<HurtCollider>(true);
+            battery = GetComponent<ItemBattery>();
+            if (hurt != null) hurt.enemyDamage = Settings.KatanaBladeDamage.Value;
+            slashSound = MakeSound(SlashFile, 0.9f);
+        }
+
+        private Vector3 BladeMiddle => transform.TransformPoint(Vector3.Lerp(bladeBase, bladeTip, 0.5f));
+
+        private PlayerAvatar Holder()
+        {
+            if (physGrabObject == null || physGrabObject.playerGrabbing == null) return null;
+            foreach (PhysGrabber g in physGrabObject.playerGrabbing)
+                if (g != null && g.playerAvatar != null) return g.playerAvatar;
+            return null;
+        }
+
+        private static Transform Eyes(PlayerAvatar p) =>
+            p != null && p.PlayerVisionTarget != null && p.PlayerVisionTarget.VisionTransform != null ? p.PlayerVisionTarget.VisionTransform : null;
+
+        private static Vector3 EyePosition(PlayerAvatar p, Transform eyes) =>
+            eyes != null ? eyes.position : p.transform.position + Vector3.up * 1.5f;
+
+        // ---------------------------------------------------------------- detecting slashes (host)
+
+        private void FixedUpdate()
+        {
+            if (!SemiFunc.IsMasterClientOrSingleplayer()) return;
+            if (hurt != null && hurt.enemyDamage != Settings.KatanaBladeDamage.Value) hurt.enemyDamage = Settings.KatanaBladeDamage.Value;
+
+            PlayerAvatar holder = Holder();
+            Vector3 middle = BladeMiddle;
+            if (holder == null) { EndSweep(true, lastBladeMiddle); haveBearing = false; }
+            else
+            {
+                Transform eyes = Eyes(holder);
+                Vector3 flat = middle - EyePosition(holder, eyes);
+                flat.y = 0f;
+                if (flat.sqrMagnitude > 0.0025f)
+                {
+                    float bearing = Mathf.Atan2(flat.x, flat.z) * Mathf.Rad2Deg;
+                    if (haveBearing) Track(Mathf.DeltaAngle(lastBearing, bearing), holder, eyes, middle);
+                    lastBearing = bearing;
+                    haveBearing = true;
+                }
+            }
+            lastBladeMiddle = middle;
+        }
+
+        /// <summary>One physics step of sideways movement (degrees, + = one way).</summary>
+        private void Track(float step, PlayerAvatar holder, Transform eyes, Vector3 middle)
+        {
+            if (Time.time - scrollSwingAt < ScrollSwingIgnore || Mathf.Abs(step) > MaxStepDegrees) { EndSweep(false, middle); return; }
+            float dt = Time.fixedDeltaTime;
+            float speed = Mathf.Abs(step) / dt;
+            int direction = step > 0f ? 1 : -1;
+            float slashSpeed = Settings.KatanaSlashSpeed.Value;
+
+            // a recognised slash ends as soon as its swing slows down or turns back: its wave goes out from here
+            if (sweepIsSlash && (speed < slashSpeed * SlashEndFraction || direction != sweepDirection || Time.time - slashAt > MaxSlashTime))
+                EndSweep(true, middle);
+
+            if (speed < MotionFloor)
+            {
+                stillTime += dt;
+                if (stillTime > StillGrace) EndSweep(true, middle);
+                return;
+            }
+            stillTime = 0f;
+            if (direction != sweepDirection)
+            {
+                EndSweep(true, lastBladeMiddle);
+                sweepDirection = direction;
+                history.Add(new Vector2(Time.time - dt, 0f));
+            }
+            // the slash's start: where the blade was when this step, the swing's first at slash speed, began
+            if (!haveFastStart && speed >= slashSpeed) { fastStart = lastBladeMiddle; haveFastStart = true; }
+            sweep += Mathf.Abs(step);
+            history.Add(new Vector2(Time.time, sweep));
+            while (history.Count > 2 && history[1].x < Time.time - 0.5f) history.RemoveAt(0);
+
+            float angle = Settings.KatanaSlashAngle.Value;
+            // how far the blade went in the last SlashAngle / SlashSpeed seconds: a slash if it covered SlashAngle
+            float window = angle / slashSpeed;
+            float covered = sweep - SweptAt(Time.time - window);
+            bestRate = Mathf.Max(bestRate, covered / window);
+            if (!sweepIsSlash && covered >= angle) TryStartSlash(holder, eyes, covered / window);
+        }
+
+        /// <summary>The swing has become a slash: does it get a wave (continuing a chain, or after the cooldown)?</summary>
+        private void TryStartSlash(PlayerAvatar holder, Transform eyes, float rate)
+        {
+            bool chained = chainCount > 0 && chainCount < Settings.KatanaChainLength.Value && Time.time <= chainUntil;
+            string refused = null;
+            if (chained && Time.time < lastWaveAt + Settings.KatanaChainGap.Value)
+                refused = $"too soon after the last wave ({Time.time - lastWaveAt:0.00} s, ChainWindowStart {Settings.KatanaChainGap.Value:0.00} s)";
+            else if (!chained && Time.time < nextWave)
+                refused = $"waves are cooling down ({nextWave - Time.time:0.0} s left)";
+            else if (!chained && !HasEnergy())
+                refused = "not enough energy for a wave";
+            if (refused != null)
+            {
+                if (Settings.KatanaDebugLog.Value && Time.time >= nextCooldownLog)
+                {
+                    nextCooldownLog = Time.time + 0.5f;
+                    Plugin.Log.LogInfo($"Katana: slash at {rate:0}°/s, but {refused}.");
+                }
+                return;
+            }
+            if (!chained) chainCount = 0;   // a fresh chain
+            sweepIsSlash = true;
+            slashAt = Time.time;
+            sweepHolder = holder;
+            sweepEyes = eyes;
+            if (!haveFastStart) { fastStart = lastBladeMiddle; haveFastStart = true; }
+            if (Settings.KatanaDebugLog.Value)
+                Plugin.Log.LogInfo($"Katana: slash {chainCount + 1} of up to {Settings.KatanaChainLength.Value} by {holder.name} at {rate:0}°/s.");
+            if (SemiFunc.IsMultiplayer() && photonView != null) photonView.RPC(nameof(HMWPKatanaSoundRPC), RpcTarget.All);
+            else PlaySlashSound();
+        }
+
+        /// <summary>Degrees swept so far at an earlier time in this swing (0 before it began).</summary>
+        private float SweptAt(float time)
+        {
+            if (history.Count == 0 || time <= history[0].x) return 0f;
+            for (int i = history.Count - 1; i > 0; i--)
+            {
+                Vector2 a = history[i - 1], b = history[i];
+                if (time >= a.x) return b.x > a.x ? Mathf.Lerp(a.y, b.y, (time - a.x) / (b.x - a.x)) : b.y;
+            }
+            return 0f;
+        }
+
+        /// <summary>The swing is over. If it was a slash (and release is allowed), its wave goes out.</summary>
+        private void EndSweep(bool release, Vector3 end)
+        {
+            if (sweepIsSlash && release && sweepHolder != null) Release(fastStart, end);
+            else if (Settings.KatanaDebugLog.Value && !sweepIsSlash && sweep >= Settings.KatanaSlashAngle.Value && bestRate < Settings.KatanaSlashSpeed.Value)
+                Plugin.Log.LogInfo($"Katana: {sweep:0}° sideways at up to {bestRate:0}°/s: too slow for a slash (SlashSpeed {Settings.KatanaSlashSpeed.Value:0}).");
+            sweep = 0f; sweepDirection = 0; stillTime = 0f; sweepIsSlash = false; bestRate = 0f; haveFastStart = false;
+            sweepHolder = null; sweepEyes = null;
+            history.Clear();
+        }
+
+        /// <summary>
+        /// Host: the wave goes out from halfway between the slash's start and end, flying outwards from the holder
+        /// (through that middle point, fairly level, with the holder's look for up and down), tilted so its tips line
+        /// up with the slash, and as wide as the slash was long (times WaveSpanPerMetre).
+        /// </summary>
+        private void Release(Vector3 start, Vector3 end)
+        {
+            Vector3 origin = (start + end) * 0.5f;
+            float length = Vector3.Distance(start, end);
+            bool first = chainCount == 0;
+            if (first)
+            {
+                // the chain's first wave: it sets the chain's starting point, and uses the energy for the whole chain
+                chainAnchor = origin;
+                SpendEnergy();
+            }
+            else
+            {
+                // later waves start from the first one's point, as long as this slash was made near it
+                float drift = Vector3.Distance(origin, chainAnchor);
+                if (drift > Settings.KatanaChainMaxDistance.Value)
+                {
+                    if (Settings.KatanaDebugLog.Value)
+                        Plugin.Log.LogInfo($"Katana: wave cancelled, the slash was {drift:0.00} m from the chain's first wave (ChainMaxDistance " +
+                                           $"{Settings.KatanaChainMaxDistance.Value:0.00}); the chain ends.");
+                    chainCount = 0;
+                    return;
+                }
+                origin = chainAnchor;
+                if (Settings.KatanaDebugLog.Value) Plugin.Log.LogInfo($"Katana: this slash was {drift:0.00} m from the chain's first; its wave starts from the same point.");
+            }
+            // the chain: one more wave in it; the cooldown counts from the latest wave
+            chainCount++;
+            lastWaveAt = Time.time;
+            nextWave = Time.time + Settings.KatanaWaveCooldown.Value;
+            int waveNumber = chainCount;
+            bool chainOver = chainCount >= Settings.KatanaChainLength.Value;
+            if (chainOver) chainCount = 0;
+            else chainUntil = Time.time + Settings.KatanaChainWindow.Value;
+            float span = Mathf.Clamp(length * Settings.KatanaWaveSpanPerMetre.Value,
+                                     Settings.KatanaWaveSpanMin.Value, Mathf.Max(Settings.KatanaWaveSpanMin.Value, Settings.KatanaWaveSpanMax.Value));
+            Vector3 eyePos = EyePosition(sweepHolder, sweepEyes);
+            Vector3 look = sweepEyes != null ? sweepEyes.forward : sweepHolder.transform.forward;
+
+            // outwards: the level direction from the eyes to the middle of the slash (the look direction if that's unclear)
+            Vector3 flat = Vector3.ProjectOnPlane(origin - eyePos, Vector3.up);
+            if (flat.sqrMagnitude < 0.04f) flat = Vector3.ProjectOnPlane(look, Vector3.up);
+            if (flat.sqrMagnitude < 1e-4f) flat = sweepHolder.transform.forward;
+            flat.Normalize();
+            // up or down as the holder looks, but no steeper than 35°
+            Vector3 lookFlat = Vector3.ProjectOnPlane(look, Vector3.up);
+            float pitch = lookFlat.sqrMagnitude > 1e-4f ? Mathf.Clamp(Vector3.Angle(lookFlat, look) * Mathf.Sign(look.y), -35f, 35f) : 0f;
+            Vector3 right = Vector3.Cross(Vector3.up, flat).normalized;
+            Vector3 forward = Quaternion.AngleAxis(-pitch, right) * flat;
+
+            // the tips along the slash's line, seen from behind; level if the slash was too short to tell
+            Vector3 chord = Vector3.ProjectOnPlane(end - start, forward);
+            if (chord.sqrMagnitude < 0.01f) chord = right;
+            chord.Normalize();
+            Vector3 up = Vector3.Cross(forward, chord);
+            if (up.y < 0f) up = -up;
+            Quaternion rotation = Quaternion.LookRotation(forward, up);
+            // the cutting edge's middle starts just clear of the blade; later waves in the chain start exactly where the first did
+            if (first) chainSpawn = origin + forward * 0.3f;
+            origin = chainSpawn;
+
+            if (Settings.KatanaDebugLog.Value)
+                Plugin.Log.LogInfo($"Katana: wave {waveNumber} of the chain{(chainOver ? " (last)" : "")}: {length:0.00} m slash -> {span:0.0} m wide, " +
+                                   $"tilted {Vector3.SignedAngle(right, chord, forward):0}°.");
+            if (SemiFunc.IsMultiplayer() && photonView != null) photonView.RPC(nameof(HMWPKatanaSlashRPC), RpcTarget.All, origin, rotation, span);
+            else KatanaWave.Spawn(origin, rotation, span, true, physGrabObject, sweepHolder);
+        }
+
+        // ---------------------------------------------------------------- energy (host)
+
+        private int BarsLeft => battery == null || battery.batteryBars <= 0 ? 0
+                                : Mathf.RoundToInt(battery.batteryLife / (100f / battery.batteryBars));
+
+        private bool HasEnergy() => battery == null || Settings.KatanaWaveEnergy.Value <= 0 || BarsLeft >= Settings.KatanaWaveEnergy.Value;
+
+        /// <summary>Host: the game's battery is host-run and sends its new level to everyone itself.</summary>
+        private void SpendEnergy()
+        {
+            int bars = Settings.KatanaWaveEnergy.Value;
+            if (battery == null || bars <= 0) return;
+            try { battery.RemoveFullBar(bars); battery.OverrideBatteryShow(2f); }
+            catch (System.Exception e) { Plugin.Log.LogWarning($"Katana: using energy failed: {e.Message}"); }
+            if (Settings.KatanaDebugLog.Value) Plugin.Log.LogInfo($"Katana: wave used {bars} energy, {BarsLeft} of {battery.batteryBars} left.");
+        }
+
+        // ---------------------------------------------------------------- the X on enemies a wave hits
+
+        /// <summary>Host: a wave hit something at this point; everyone sees a red X there.</summary>
+        internal void ShowImpact(Vector3 point, float size)
+        {
+            if (SemiFunc.IsMultiplayer() && photonView != null) photonView.RPC(nameof(HMWPKatanaImpactRPC), RpcTarget.All, point, size);
+            else KatanaImpactMark.Spawn(point, size);
+        }
+
+        [PunRPC]
+        public void HMWPKatanaImpactRPC(Vector3 point, float size, PhotonMessageInfo info)
+        {
+            if (info.Sender != null && !info.Sender.IsMasterClient) return;
+            KatanaImpactMark.Spawn(point, size);
+        }
+
+        [PunRPC]
+        public void HMWPKatanaSoundRPC(PhotonMessageInfo info)
+        {
+            if (info.Sender != null && !info.Sender.IsMasterClient) return;   // only the host decides slashes
+            PlaySlashSound();
+        }
+
+        [PunRPC]
+        public void HMWPKatanaSlashRPC(Vector3 origin, Quaternion rotation, float span, PhotonMessageInfo info)
+        {
+            if (info.Sender != null && !info.Sender.IsMasterClient) return;
+            bool host = SemiFunc.IsMasterClientOrSingleplayer();
+            KatanaWave.Spawn(origin, rotation, span, host, physGrabObject, host ? Holder() : null);
+        }
+
+        private void PlaySlashSound()
+        {
+            if (slashSound == null) return;
+            try { slashSound.Play(BladeMiddle, 1f, 1f, 1f, 1f); }
+            catch (System.Exception e) { Plugin.Log.LogWarning($"Katana sound failed: {e.Message}"); }
+        }
+
+        private Sound MakeSound(string file, float volume)
+        {
+            AudioClip clip = SoundLibrary.Get(file);
+            ItemMelee source = soundTemplate != null ? soundTemplate : GetComponent<ItemMelee>();
+            if (clip == null || source == null || source.soundSwing == null) return null;
+            var s = new Sound();
+            Sound.CopySound(source.soundSwing, s);
+            s.Sounds = new[] { clip };
+            s.Volume = volume;
+            s.VolumeRandom = 0f;
+            s.Pitch = 1f;
+            s.PitchRandom = 0.05f;
+            return s;
+        }
+    }
+
+    /// <summary>The sword's scroll-out swing on the katana: noted, so the swing isn't mistaken for a sideways slash.</summary>
+    [HarmonyPatch(typeof(ItemMelee), "ScrollSwingStartRPC")]
+    internal static class KatanaScrollPatch
+    {
+        private static void Postfix(ItemMelee __instance, int _direction)
+        {
+            Katana katana = __instance != null ? __instance.GetComponent<Katana>() : null;
+            if (katana == null) return;
+            katana.scrollSwingAt = Time.time;
+            if (Settings.KatanaDebugLog.Value) Plugin.Log.LogInfo($"Katana: the sword's scroll swing started ({(_direction > 0 ? "out" : "in")}).");
+        }
+    }
+}

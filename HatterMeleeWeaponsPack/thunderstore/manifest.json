@@ -1,0 +1,7 @@
+{
+	"name": "HatterMeleeWeaponsPack",
+	"version_number": "1.0.1",
+	"website_url": "",
+	"description": "Hatter's melee weapons for R.E.P.O. A physics Nunchuck that hits harder the faster it swings, and a Scythe you hook behind enemies and pull to cut.",
+	"dependencies": ["BepInEx-BepInExPack-5.4.2305", "Zehs-REPOLib-4.3.0"]
+}

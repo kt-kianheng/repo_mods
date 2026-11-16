@@ -1,0 +1,7 @@
+{
+	"name": "HatterWeaponsPack",
+	"version_number": "1.0.4",
+	"website_url": "",
+	"description": "Hatter's weapons for R.E.P.O. A Rocket Launcher you can rocket-jump with, a rapid-fire Plasma Rifle, and Ember, Frost, Healing and Lightning wands.",
+	"dependencies": ["BepInEx-BepInExPack-5.4.2305", "Zehs-REPOLib-4.3.0"]
+}

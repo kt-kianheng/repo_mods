@@ -1,0 +1,7 @@
+{
+	"name": "HatterMiscellaneousPack",
+	"version_number": "1.0.1",
+	"website_url": "",
+	"description": "Consumables and odds and ends for R.E.P.O. Pocket compasses that point you to enemies or extraction, and an All-Seeing Monocle that shows valuables through walls.",
+	"dependencies": ["BepInEx-BepInExPack-5.4.2305", "Zehs-REPOLib-4.3.0"]
+}

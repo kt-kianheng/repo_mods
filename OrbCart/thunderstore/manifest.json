@@ -1,0 +1,10 @@
+{
+  "name": "OrbCart",
+  "version_number": "1.0.7",
+  "website_url": "",
+  "description": "Orb C.A.R.T.: a pocketable cart with a Hauler-style hatch that only accepts enemy orbs, plus a fill % screen. Capacity is configurable (default $100k).",
+  "dependencies": [
+    "BepInEx-BepInExPack-5.4.2305",
+    "Zehs-REPOLib-4.3.0"
+  ]
+}

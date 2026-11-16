@@ -1,0 +1,7 @@
+{
+	"name": "HatterEnemiesPack",
+	"version_number": "1.0.0",
+	"website_url": "",
+	"description": "Hatter's enemies for R.E.P.O. The Alter Mimic: an invisible stalker that silences a lone player and wears their face.",
+	"dependencies": ["BepInEx-BepInExPack-5.4.2305", "Zehs-REPOLib-4.3.0"]
+}

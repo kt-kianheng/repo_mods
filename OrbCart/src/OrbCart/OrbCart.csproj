@@ -1,0 +1,56 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>netstandard2.1</TargetFramework>
+    <AssemblyName>OrbCart</AssemblyName>
+    <RootNamespace>OrbCart</RootNamespace>
+    <Version>1.0.7</Version>
+    <LangVersion>9.0</LangVersion>
+    <Nullable>disable</Nullable>
+    <DebugType>embedded</DebugType>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <!-- Unity assemblies reference mscorlib; silence the netstandard facade noise. -->
+    <NoWarn>$(NoWarn);MSB3277;CS0436</NoWarn>
+
+    <!-- Paths: override on the command line, e.g. dotnet build -p:GameDir="E:\Games\REPO" -->
+    <GameDir Condition="'$(GameDir)' == ''">D:\SteamLibrary\steamapps\common\REPO</GameDir>
+    <ProfileDir Condition="'$(ProfileDir)' == ''">$(APPDATA)\r2modmanPlus-local\REPO\profiles\Test mod</ProfileDir>
+    <ManagedDir>$(GameDir)\REPO_Data\Managed</ManagedDir>
+    <!-- Where the built mod is copied for testing (r2modman-style plugin folder). -->
+    <InstallDir>$(ProfileDir)\BepInEx\plugins\kianheng-OrbCart</InstallDir>
+  </PropertyGroup>
+
+  <!-- Game assemblies (compile-time only, never copied). -->
+  <ItemGroup>
+    <Reference Include="$(ManagedDir)\*.dll"
+               Exclude="$(ManagedDir)\mscorlib.dll;$(ManagedDir)\netstandard.dll;$(ManagedDir)\System*.dll;$(ManagedDir)\Mono.*.dll;$(ManagedDir)\Microsoft.*.dll"
+               Private="false" />
+  </ItemGroup>
+
+  <!-- Mod loader + library, taken from the r2modman profile. -->
+  <ItemGroup>
+    <Reference Include="BepInEx" HintPath="$(ProfileDir)\BepInEx\core\BepInEx.dll" Private="false" />
+    <Reference Include="0Harmony" HintPath="$(ProfileDir)\BepInEx\core\0Harmony.dll" Private="false" />
+    <Reference Include="REPOLib" HintPath="$(ProfileDir)\BepInEx\plugins\Zehs-REPOLib\REPOLib.dll" Private="false" />
+  </ItemGroup>
+
+  <!-- Sprites ship inside the DLL so the mod is a single file. -->
+  <ItemGroup>
+    <EmbeddedResource Include="Assets\*.png" LogicalName="OrbCart.Assets.%(Filename)%(Extension)" />
+  </ItemGroup>
+
+  <Target Name="CheckPaths" BeforeTargets="ResolveAssemblyReferences">
+    <Error Condition="!Exists('$(ManagedDir)\Assembly-CSharp.dll')" Text="R.E.P.O. not found at '$(GameDir)'. Pass -p:GameDir=&quot;path\to\REPO&quot;." />
+    <Error Condition="!Exists('$(ProfileDir)\BepInEx\plugins\Zehs-REPOLib\REPOLib.dll')" Text="REPOLib not found in profile '$(ProfileDir)'. Install REPOLib in that r2modman profile or pass -p:ProfileDir=&quot;...&quot;." />
+  </Target>
+
+  <!-- Copy the DLL straight into the r2modman profile so you can launch and test. -->
+  <Target Name="InstallToProfile" AfterTargets="Build" Condition="'$(Configuration)' == 'Release' And '$(SkipInstall)' != 'true'">
+    <MakeDir Directories="$(InstallDir)" />
+    <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(InstallDir)" />
+    <Copy SourceFiles="$(MSBuildProjectDirectory)\..\..\thunderstore\manifest.json;$(MSBuildProjectDirectory)\..\..\thunderstore\README.md;$(MSBuildProjectDirectory)\..\..\thunderstore\icon.png" DestinationFolder="$(InstallDir)" />
+    <Message Importance="high" Text="OrbCart installed to: $(InstallDir)" />
+  </Target>
+
+</Project>

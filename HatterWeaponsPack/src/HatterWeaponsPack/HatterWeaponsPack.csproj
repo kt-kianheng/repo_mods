@@ -1,0 +1,47 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>netstandard2.1</TargetFramework>
+    <AssemblyName>HatterWeaponsPack</AssemblyName>
+    <RootNamespace>HatterWeaponsPack</RootNamespace>
+    <Version>1.0.0</Version>
+    <LangVersion>9.0</LangVersion>
+    <Nullable>disable</Nullable>
+    <DebugType>embedded</DebugType>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <NoWarn>$(NoWarn);MSB3277;CS0436</NoWarn>
+
+    <!-- Paths: override on the command line, e.g. dotnet build -p:GameDir="E:\Games\REPO" -->
+    <GameDir Condition="'$(GameDir)' == ''">D:\SteamLibrary\steamapps\common\REPO</GameDir>
+    <ProfileDir Condition="'$(ProfileDir)' == ''">$(APPDATA)\r2modmanPlus-local\REPO\profiles\Test mod</ProfileDir>
+    <ManagedDir>$(GameDir)\REPO_Data\Managed</ManagedDir>
+    <InstallDir>$(ProfileDir)\BepInEx\plugins\HatterWeaponsPack</InstallDir>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Reference Include="$(ManagedDir)\*.dll"
+               Exclude="$(ManagedDir)\mscorlib.dll;$(ManagedDir)\netstandard.dll;$(ManagedDir)\System*.dll;$(ManagedDir)\Mono.*.dll;$(ManagedDir)\Microsoft.*.dll"
+               Private="false" />
+    <Reference Include="BepInEx" HintPath="$(ProfileDir)\BepInEx\core\BepInEx.dll" Private="false" />
+    <Reference Include="0Harmony" HintPath="$(ProfileDir)\BepInEx\core\0Harmony.dll" Private="false" />
+    <Reference Include="REPOLib" HintPath="$(ProfileDir)\BepInEx\plugins\Zehs-REPOLib\REPOLib.dll" Private="false" />
+  </ItemGroup>
+
+  <!-- Models (exported from Blender by tools/export_blender.py) ship inside the DLL. -->
+  <ItemGroup>
+    <EmbeddedResource Include="Assets\*.mesh" LogicalName="HatterWeaponsPack.Assets.%(Filename)%(Extension)" />
+    <EmbeddedResource Include="Assets\*.pcm" LogicalName="HatterWeaponsPack.Assets.%(Filename)%(Extension)" />
+  </ItemGroup>
+
+  <Target Name="CheckPaths" BeforeTargets="ResolveAssemblyReferences">
+    <Error Condition="!Exists('$(ManagedDir)\Assembly-CSharp.dll')" Text="R.E.P.O. not found at '$(GameDir)'. Pass -p:GameDir=&quot;path\to\REPO&quot;." />
+    <Error Condition="!Exists('$(ProfileDir)\BepInEx\plugins\Zehs-REPOLib\REPOLib.dll')" Text="REPOLib not found in profile '$(ProfileDir)'." />
+  </Target>
+
+  <Target Name="InstallToProfile" AfterTargets="Build" Condition="'$(Configuration)' == 'Release' And '$(SkipInstall)' != 'true'">
+    <MakeDir Directories="$(InstallDir)" />
+    <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(InstallDir)" />
+    <Message Importance="high" Text="HatterWeaponsPack installed to: $(InstallDir)" />
+  </Target>
+
+</Project>
