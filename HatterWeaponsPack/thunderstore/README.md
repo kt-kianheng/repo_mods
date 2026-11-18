@@ -478,3 +478,7 @@ Everyone needs the mod. The host decides what a rocket or bolt hits; everyone se
 ## How it works
 
 Weapons are built at startup from the game's own items (for grabbing, batteries and networking) with models made in Blender and stored inside the mod, so there is no asset bundle.
+
+## Feedback
+
+If you have any issues or feedback, contact me at the GitHub page: https://github.com/kt-kianheng/repo_mods

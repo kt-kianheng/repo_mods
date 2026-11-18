@@ -32,3 +32,7 @@ A gold monocle with a little chain, in the style of the monocle cosmetic, sold f
 - Only the player looking through it sees the valuables. It only works in a level.
 
 Settings: `[All-Seeing Monocle]` (on/off, price, charges per battery, seconds per charge, size compared with a drone, zoom speed, sight range, the lens's size on screen, and which of the game's highlights to use).
+
+## Feedback
+
+If you have any issues or feedback, contact me at the GitHub page: https://github.com/kt-kianheng/repo_mods

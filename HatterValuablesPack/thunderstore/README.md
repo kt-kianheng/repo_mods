@@ -41,3 +41,7 @@ Settings: `[Enemy Compass]` and `[Extraction Compass]` (on/off, value), `[Compas
 - REPOLib 4.3.0
 
 Every player needs the mod.
+
+## Feedback
+
+If you have any issues or feedback, contact me at the GitHub page: https://github.com/kt-kianheng/repo_mods

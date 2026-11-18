@@ -1,0 +1,7 @@
+{
+	"name": "HatterCartsPack",
+	"version_number": "1.0.0",
+	"website_url": "",
+	"description": "Carts for R.E.P.O. Includes the Orb C.A.R.T. and a shrinkable big cart",
+	"dependencies": ["BepInEx-BepInExPack-5.4.2305", "Zehs-REPOLib-4.3.0"]
+}

@@ -77,3 +77,7 @@ TargetDummy: its training dummies show the nunchuck's hits and the katana's wave
 ## Credits
 
 Scythe cut sound: "Sword Slice 2" by Dragon Studio (Pixabay). Scythe retract sound: "Sword Swing SFX" by oxidvideos (Pixabay). Katana slash sound: "sword slash and swing" by daviddumaisaudio (Pixabay).
+
+## Feedback
+
+If you have any issues or feedback, contact me at the GitHub page: https://github.com/kt-kianheng/repo_mods

@@ -25,3 +25,7 @@ Everyone needs the mod. The host decides what fits and the capacity is synced fr
 ## How it works
 
 The cart is assembled at startup from the game's own Pocket C.A.R.T. and Hauler parts, then registered with REPOLib, so there is no asset bundle and it always matches the current game models.
+
+## Feedback
+
+If you have any issues or feedback, contact me at the GitHub page: https://github.com/kt-kianheng/repo_mods

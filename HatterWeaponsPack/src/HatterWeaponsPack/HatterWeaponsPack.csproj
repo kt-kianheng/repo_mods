@@ -13,7 +13,7 @@
 
     <!-- Paths: override on the command line, e.g. dotnet build -p:GameDir="E:\Games\REPO" -->
     <GameDir Condition="'$(GameDir)' == ''">D:\SteamLibrary\steamapps\common\REPO</GameDir>
-    <ProfileDir Condition="'$(ProfileDir)' == ''">$(APPDATA)\r2modmanPlus-local\REPO\profiles\Test mod</ProfileDir>
+    <ProfileDir Condition="'$(ProfileDir)' == ''">$(APPDATA)\r2modmanPlus-local\REPO\profiles\Test</ProfileDir>
     <ManagedDir>$(GameDir)\REPO_Data\Managed</ManagedDir>
     <InstallDir>$(ProfileDir)\BepInEx\plugins\HatterWeaponsPack</InstallDir>
   </PropertyGroup>
@@ -38,7 +38,7 @@
     <Error Condition="!Exists('$(ProfileDir)\BepInEx\plugins\Zehs-REPOLib\REPOLib.dll')" Text="REPOLib not found in profile '$(ProfileDir)'." />
   </Target>
 
-  <Target Name="InstallToProfile" AfterTargets="Build" Condition="'$(Configuration)' == 'Release' And '$(SkipInstall)' != 'true'">
+  <Target Name="InstallToProfile" AfterTargets="Build" Condition="'$(Configuration)' == 'Release' And '$(InstallToProfile)' == 'true'">
     <MakeDir Directories="$(InstallDir)" />
     <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(InstallDir)" />
     <Message Importance="high" Text="HatterWeaponsPack installed to: $(InstallDir)" />

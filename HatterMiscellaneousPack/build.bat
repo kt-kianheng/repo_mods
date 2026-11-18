@@ -5,7 +5,7 @@ cd /d "%~dp0"
 where dotnet >nul 2>nul
 if errorlevel 1 (
   echo The .NET SDK was not found. Install it from https://dotnet.microsoft.com/download and try again.
-  pause
+  if not defined NOPAUSE pause
   exit /b 1
 )
 
@@ -14,7 +14,7 @@ dotnet build "src\HatterMiscellaneousPack\HatterMiscellaneousPack.csproj" -c Rel
 if errorlevel 1 (
   echo.
   echo Build failed - see the errors above.
-  pause
+  if not defined NOPAUSE pause
   exit /b 1
 )
 
@@ -22,14 +22,16 @@ echo.
 echo Packaging Thunderstore zip...
 powershell -NoProfile -ExecutionPolicy Bypass -Command ^
   "$ErrorActionPreference='Stop';" ^
-  "$stage='dist\stage'; if (Test-Path $stage) { Remove-Item $stage -Recurse -Force };" ^
+  "$out=$env:HATTER_BUILD_OUT; if (-not $out) { $out='..\Builds' }; New-Item -ItemType Directory -Force $out | Out-Null;" ^
+  "$stage=Join-Path $env:TEMP 'HatterMiscellaneousPack_stage'; if (Test-Path $stage) { Remove-Item $stage -Recurse -Force };" ^
   "New-Item -ItemType Directory -Force $stage | Out-Null;" ^
   "Copy-Item 'src\HatterMiscellaneousPack\bin\Release\HatterMiscellaneousPack.dll','thunderstore\manifest.json','thunderstore\README.md','thunderstore\CHANGELOG.md','thunderstore\icon.png' $stage;" ^
   "$v=(Get-Content 'thunderstore\manifest.json' -Raw | ConvertFrom-Json).version_number;" ^
-  "Compress-Archive -Path \"$stage\*\" -DestinationPath \"dist\HatterMiscellaneousPack-$v.zip\" -Force;" ^
+  "$zip=Join-Path $out ('hatter_miscellaneous_pack-' + $v.Replace('.','_') + '.zip');" ^
+  "Compress-Archive -Path \"$stage\*\" -DestinationPath $zip -Force;" ^
   "Remove-Item $stage -Recurse -Force;" ^
-  "Write-Host ('Package: dist\HatterMiscellaneousPack-' + $v + '.zip')"
+  "Write-Host ('Package: ' + $zip)"
 
 echo.
-echo Done. Launch R.E.P.O. from r2modman with the "Test mod" profile to test.
-pause
+echo Done. To test, import the zip in r2modman: Settings, Import local mod.
+if not defined NOPAUSE pause

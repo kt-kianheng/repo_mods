@@ -54,3 +54,7 @@ A player droid on the same stand, treated as a **teammate**. It's for testing he
 ## Credits
 
 Stand modelled in Blender. The Robe and the droid are the game's own models, loaded at runtime; they aren't included in this mod.
+
+## Feedback
+
+If you have any issues or feedback, contact me at the GitHub page: https://github.com/kt-kianheng/repo_mods

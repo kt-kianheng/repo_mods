@@ -20,3 +20,7 @@ An invisible stalker. It waits for a player to be alone in a room, creeps up on 
 - Uses TTS to confuse you
 - After being alive for some time and being around a player, it will whip out its own weapon and shoot. Warning: it can be quite an... aimbot.
 - Can grab valuables occasionally, but is very careless. Don't let it touch your valuables.
+
+## Feedback
+
+If you have any issues or feedback, contact me at the GitHub page: https://github.com/kt-kianheng/repo_mods
